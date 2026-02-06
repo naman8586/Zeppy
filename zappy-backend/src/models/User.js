@@ -1,5 +1,3 @@
-// User model
-// ============================================
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema(
@@ -11,23 +9,39 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
     },
+
     password: {
       type: String,
       required: true,
+      select: false, // 🔐 hidden by default
     },
+
     role: {
       type: String,
       enum: ['vendor', 'customer', 'admin'],
       default: 'vendor',
       required: true,
     },
+
     profile: {
       name: {
         type: String,
         required: true,
+        trim: true,
       },
-      phone: String,
-      avatar: String,
+      phone: {
+        type: String,
+        trim: true,
+      },
+      avatar: {
+        type: String,
+        default: '',
+      },
+    },
+
+    isActive: {
+      type: Boolean,
+      default: true,
     },
   },
   {
@@ -35,7 +49,7 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-// Create indexes
+userSchema.index({ email: 1 }, { unique: true });
 userSchema.index({ role: 1 });
 
 module.exports = mongoose.model('User', userSchema);

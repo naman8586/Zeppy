@@ -4,38 +4,46 @@ const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const { generateToken } = require('../utils/token');
 
-// @desc    Register new user
-// @route   POST /api/auth/register
-// @access  Public
+/* ======================================================
+   REGISTER
+====================================================== */
 const register = async (req, res) => {
   try {
-    const { email, password, role, name, phone } = req.body;
+    let { email, password, role, profile } = req.body;
 
-    // Check if user exists
+    email = email?.toLowerCase().trim();
+    profile = profile || {};
+
+    if (!email || !password || !profile.name) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields',
+      });
+    }
+
     const userExists = await User.findOne({ email });
     if (userExists) {
-      return res.status(400).json({
+      return res.status(409).json({
         success: false,
         message: 'User with this email already exists',
       });
     }
 
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create user
     const user = await User.create({
       email,
       password: hashedPassword,
-      role,
-      profile: { name, phone },
+      role: role || 'vendor',
+      profile: {
+        name: profile.name,
+        phone: profile.phone || '',
+      },
     });
 
-    // Generate token
-    const token = generateToken(user._id);
+    const token = generateToken(user._id); // ✅ CORRECT
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: 'User registered successfully',
       data: {
@@ -49,24 +57,41 @@ const register = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Register error:', error);
-    res.status(500).json({
+    console.error('❌ Register error:', error);
+
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: 'Email already exists',
+      });
+    }
+
+    return res.status(500).json({
       success: false,
       message: 'Server error during registration',
-      error: error.message,
     });
   }
 };
 
-// @desc    Login user
-// @route   POST /api/auth/login
-// @access  Public
+/* ======================================================
+   LOGIN (FINAL FIX)
+====================================================== */
 const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    let { email, password } = req.body;
 
-    // Find user
-    const user = await User.findOne({ email });
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and password are required',
+      });
+    }
+
+    email = email.toLowerCase().trim();
+
+    // 🔐 MUST explicitly include password
+    const user = await User.findOne({ email }).select('+password');
+
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -74,7 +99,6 @@ const login = async (req, res) => {
       });
     }
 
-    // Check password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({
@@ -83,10 +107,10 @@ const login = async (req, res) => {
       });
     }
 
-    // Generate token
+    // ✅ FIX: pass user._id ONLY
     const token = generateToken(user._id);
 
-    res.json({
+    return res.json({
       success: true,
       message: 'Login successful',
       data: {
@@ -100,23 +124,30 @@ const login = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({
+    console.error('❌ Login error:', error);
+
+    return res.status(500).json({
       success: false,
       message: 'Server error during login',
-      error: error.message,
     });
   }
 };
 
-// @desc    Get user profile
-// @route   GET /api/auth/profile
-// @access  Private
+/* ======================================================
+   PROFILE
+====================================================== */
 const getProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select('-password');
+    const user = await User.findById(req.user._id).select('-password'); // ✅ _id
 
-    res.json({
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    return res.json({
       success: true,
       data: {
         id: user._id,
@@ -126,11 +157,11 @@ const getProfile = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Get profile error:', error);
-    res.status(500).json({
+    console.error('❌ Get profile error:', error);
+
+    return res.status(500).json({
       success: false,
       message: 'Server error',
-      error: error.message,
     });
   }
 };

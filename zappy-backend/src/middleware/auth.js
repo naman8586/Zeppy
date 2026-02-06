@@ -8,8 +8,11 @@ const protect = async (req, res, next) => {
   try {
     let token;
 
-    // Check if token exists in header
-    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    // Extract token from Authorization header
+    if (
+      req.headers.authorization &&
+      req.headers.authorization.startsWith('Bearer ')
+    ) {
       token = req.headers.authorization.split(' ')[1];
     }
 
@@ -20,22 +23,25 @@ const protect = async (req, res, next) => {
       });
     }
 
-    // Verify token
+    // ✅ Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // Get user from token
-    req.user = await User.findById(decoded.id).select('-password');
+    // ✅ FIX: JWT payload uses "id", NOT "userId"
+    const user = await User.findById(decoded.id);
 
-    if (!req.user) {
+    if (!user) {
       return res.status(401).json({
         success: false,
         message: 'User not found',
       });
     }
 
+    // Attach user to request
+    req.user = user;
     next();
   } catch (error) {
     console.error('Auth middleware error:', error);
+
     return res.status(401).json({
       success: false,
       message: 'Not authorized, token failed',
@@ -43,13 +49,13 @@ const protect = async (req, res, next) => {
   }
 };
 
-// Check user role
+// Role-based authorization
 const authorize = (...roles) => {
   return (req, res, next) => {
-    if (!roles.includes(req.user.role)) {
+    if (!req.user || !roles.includes(req.user.role)) {
       return res.status(403).json({
         success: false,
-        message: `User role '${req.user.role}' is not authorized to access this route`,
+        message: `User role '${req.user?.role}' is not authorized`,
       });
     }
     next();

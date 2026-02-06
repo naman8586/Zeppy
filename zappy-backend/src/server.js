@@ -1,109 +1,138 @@
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const path = require('path');
-const connectDB = require('./config/db');
+require("dotenv").config();
+const express = require("express");
+const cors = require("cors");
+const path = require("path");
+const connectDB = require("./config/db");
 
-// Import routes
-const authRoutes = require('./routes/auth');
-const eventRoutes = require('./routes/events');
-const otpRoutes = require('./routes/otp');
-const mediaRoutes = require('./routes/media');
+// Routes
+const authRoutes = require("./routes/auth");
+const eventRoutes = require("./routes/events");
+const otpRoutes = require("./routes/otp");
+const mediaRoutes = require("./routes/media");
 
-// Initialize express app
 const app = express();
 
-// Connect to MongoDB
+/* ======================================================
+   DATABASE
+====================================================== */
 connectDB();
 
-// 1. TACTICAL CORS CONFIGURATION
-// This allows both your current and future potential ports to connect
-app.use(cors({
-  origin: function (origin, callback) {
-    const allowedOrigins = [
-      'http://localhost:3000', 
-      'http://localhost:3001', 
-      'http://127.0.0.1:3000', 
-      'http://127.0.0.1:3001'
-    ];
-    // Allow requests with no origin (like mobile apps or curl)
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('CORS Policy Violation: Origin not authorized.'));
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
-
-// 2. REQUEST LOGGER (For debugging 404s/500s)
+/* ======================================================
+   CORS (FINAL, NO CUSTOM LOGIC, NO ERRORS)
+====================================================== */
 app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  res.header("Access-Control-Allow-Origin", "http://localhost:3000");
+  res.header(
+    "Access-Control-Allow-Methods",
+    "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+  );
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.header("Access-Control-Allow-Credentials", "true");
+
+  // Handle preflight
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
   next();
 });
 
-app.use(express.json());
+// Explicit preflight response (Node 22 safe)
+app.use((req, res, next) => {
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+  next();
+});
+
+/* ======================================================
+   BODY PARSERS
+====================================================== */
+app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-// Serve static files (uploaded images)
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+/* ======================================================
+   REQUEST LOGGER
+====================================================== */
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
+  next();
+});
 
-// API Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/events', eventRoutes);
-app.use('/api/otp', otpRoutes);
-app.use('/api/media', mediaRoutes);
+/* ======================================================
+   STATIC FILES
+====================================================== */
+app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
-// Welcome route
-app.get('/', (req, res) => {
+/* ======================================================
+   ROUTES
+====================================================== */
+app.use("/api/auth", authRoutes);
+app.use("/api/events", eventRoutes);
+app.use("/api/otp", otpRoutes);
+app.use("/api/media", mediaRoutes);
+
+/* ======================================================
+   SYSTEM ROUTES
+====================================================== */
+app.get("/", (req, res) => {
   res.json({
     success: true,
-    message: '🎯 Welcome to Zappy API',
-    version: '1.0.0'
+    message: "🎯 Welcome to Zappy API",
+    version: "1.0.0",
   });
 });
 
-// Health check route
-app.get('/health', (req, res) => {
-  res.json({ success: true, status: 'healthy', timestamp: new Date().toISOString() });
+app.get("/health", (req, res) => {
+  res.json({
+    success: true,
+    status: "healthy",
+    timestamp: new Date().toISOString(),
+  });
 });
 
-// 404 handler
+/* ======================================================
+   404 HANDLER
+====================================================== */
 app.use((req, res) => {
-  res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found` });
+  res.status(404).json({
+    success: false,
+    message: `Route ${req.originalUrl} not found`,
+  });
 });
 
-// Global error handler
+/* ======================================================
+   GLOBAL ERROR HANDLER
+====================================================== */
 app.use((err, req, res, next) => {
-  console.error('❌ Server Error:', err.stack);
-  
-  if (err.code === 'LIMIT_FILE_SIZE') {
-    return res.status(400).json({ success: false, message: 'File size too large. Max 10MB' });
-  }
+  console.error("❌ Server Error:", err);
 
   res.status(err.status || 500).json({
     success: false,
-    message: err.message || 'Internal server error',
-    error: process.env.NODE_ENV === 'development' ? err : undefined,
+    message: err.message || "Internal server error",
   });
 });
 
-const PORT = process.env.PORT || 3000;
+/* ======================================================
+   SERVER START
+====================================================== */
+const PORT = process.env.PORT || 5000;
+
 app.listen(PORT, () => {
   console.log(`
-  ╔════════════════════════════════════════╗
-  ║         ZAPPY TERMINAL ACTIVE          ║
-  ╠════════════════════════════════════════╣
-  ║ 📍 URL: http://localhost:${PORT}        ║
-  ║ 📡 ENV: ${process.env.NODE_ENV || 'development'}            ║
-  ║ 🔓 CORS: Configured for Ports 3000/3001║
-  ╚════════════════════════════════════════╝
-  `);
+╔════════════════════════════════════════╗
+║         ZAPPY TERMINAL ACTIVE          ║
+╠════════════════════════════════════════╣
+║ 📍 API: http://localhost:${PORT}        ║
+║ 🌐 FE:  http://localhost:3000           ║
+║ 🔓 CORS: FIXED                          ║
+╚════════════════════════════════════════╝
+`);
 });
 
-process.on('unhandledRejection', (err) => {
-  console.error('❌ Unhandled Rejection:', err);
+/* ======================================================
+   PROCESS SAFETY
+====================================================== */
+process.on("unhandledRejection", (err) => {
+  console.error("❌ Unhandled Rejection:", err);
   process.exit(1);
 });

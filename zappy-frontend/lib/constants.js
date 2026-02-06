@@ -1,8 +1,3 @@
-// ============================================
-// FILE: src/lib/constants.js
-// Application Constants with Tactical Theme
-// ============================================
-
 export const APP_CONFIG = {
   NAME: 'ZAPPY',
   VERSION: '2.0.0',
@@ -10,7 +5,7 @@ export const APP_CONFIG = {
   THEME: 'tactical-noir',
 };
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
 // ============================================
 // EVENT STATUS

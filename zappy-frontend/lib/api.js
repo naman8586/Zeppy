@@ -1,11 +1,11 @@
 // ============================================
 // FILE: src/lib/api.js
-// Tactical API Client with Enhanced Error Handling
+// Stable API Client (Next.js App Router Safe)
 // ============================================
 import axios from 'axios';
-import Cookies from 'js-cookie';
+import { auth } from '@/lib/auth';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
 // Create axios instance
 const api = axios.create({
@@ -14,10 +14,13 @@ const api = axios.create({
   timeout: 10000,
 });
 
-// Request Interceptor: Attach Auth Token
+/* ======================================================
+   REQUEST INTERCEPTOR
+   - Use in-memory auth cache (NOT Cookies directly)
+====================================================== */
 api.interceptors.request.use(
   (config) => {
-    const token = Cookies.get('zappy_token');
+    const token = auth.getToken(); // ✅ stable, cached
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -26,92 +29,96 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response Interceptor: Elegant Error Handling
+/* ======================================================
+   RESPONSE INTERCEPTOR
+   - NO infinite logout loops
+   - Only logout when truly necessary
+====================================================== */
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    const message = error.response?.data?.message || 'A digital glitch occurred.';
-    
-    // Handle 401 Unauthorized
-    if (error.response?.status === 401) {
-      Cookies.remove('zappy_token');
-      Cookies.remove('zappy_user');
-      if (typeof window !== 'undefined') {
-        window.location.href = '/login?error=session_expired';
+    const status = error.response?.status;
+    const message =
+      error.response?.data?.message || 'A digital glitch occurred.';
+
+    // ⚠️ Handle 401 safely
+    if (
+      status === 401 &&
+      typeof window !== 'undefined'
+    ) {
+      const path = window.location.pathname;
+      const isAuthPage =
+        path.startsWith('/login') || path.startsWith('/register');
+
+      // Only force logout if user is on a protected page
+      if (!isAuthPage && auth.isAuthenticated()) {
+        console.warn('[AUTH] Session invalid → logging out');
+        auth.logout(); // ✅ single source of truth
       }
     }
-    
-    // Return custom error object
+
     return Promise.reject({
       message,
-      status: error.response?.status,
+      status,
       data: error.response?.data,
     });
   }
 );
 
-// ============================================
-// AUTH API
-// ============================================
+/* ======================================================
+   AUTH API
+====================================================== */
 export const authAPI = {
   register: (data) => api.post('/auth/register', data),
   login: (data) => api.post('/auth/login', data),
   getProfile: () => api.get('/auth/profile'),
 };
 
-// ============================================
-// EVENTS API
-// ============================================
+/* ======================================================
+   EVENTS API
+====================================================== */
 export const eventsAPI = {
   create: (data) => api.post('/events', data),
-  getVendorEvents: (status) => 
+  getVendorEvents: (status) =>
     api.get('/events/vendor', { params: status ? { status } : {} }),
   getEventDetails: (id) => api.get(`/events/${id}`),
   checkIn: (data) => api.post('/events/check-in', data),
   uploadProgress: (data) => api.post('/events/progress', data),
 };
 
-// ============================================
-// OTP API
-// ============================================
+/* ======================================================
+   OTP API
+====================================================== */
 export const otpAPI = {
   generate: (data) => api.post('/otp/generate', data),
   verify: (data) => api.post('/otp/verify', data),
-  getStatus: (eventId, otpType) => 
+  getStatus: (eventId, otpType) =>
     api.get('/otp/status', { params: { eventId, otpType } }),
 };
 
-// ============================================
-// MEDIA API with Progress Tracking
-// ============================================
+/* ======================================================
+   MEDIA API
+====================================================== */
 export const mediaAPI = {
-  uploadCheckIn: (formData, onProgress) => {
-    return api.post('/media/upload/check-in', formData, {
+  uploadCheckIn: (formData, onProgress) =>
+    api.post('/media/upload/check-in', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
-      onUploadProgress: (progressEvent) => {
-        if (onProgress && progressEvent.total) {
-          const percentCompleted = Math.round(
-            (progressEvent.loaded * 100) / progressEvent.total
-          );
-          onProgress(percentCompleted);
+      onUploadProgress: (e) => {
+        if (onProgress && e.total) {
+          onProgress(Math.round((e.loaded * 100) / e.total));
         }
       },
-    });
-  },
+    }),
 
-  uploadProgress: (formData, onProgress) => {
-    return api.post('/media/upload/progress', formData, {
+  uploadProgress: (formData, onProgress) =>
+    api.post('/media/upload/progress', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
-      onUploadProgress: (progressEvent) => {
-        if (onProgress && progressEvent.total) {
-          const percentCompleted = Math.round(
-            (progressEvent.loaded * 100) / progressEvent.total
-          );
-          onProgress(percentCompleted);
+      onUploadProgress: (e) => {
+        if (onProgress && e.total) {
+          onProgress(Math.round((e.loaded * 100) / e.total));
         }
       },
-    });
-  },
+    }),
 };
 
 export default api;

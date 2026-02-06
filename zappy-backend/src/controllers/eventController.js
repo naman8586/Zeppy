@@ -4,7 +4,9 @@ const Event = require('../models/Event');
 const CheckIn = require('../models/CheckIn');
 const EventProgress = require('../models/EventProgress');
 
-// @desc    Create new event
+/* ======================================================
+   CREATE EVENT
+====================================================== */
 // @route   POST /api/events
 // @access  Private (Vendor only)
 const createEvent = async (req, res) => {
@@ -20,19 +22,30 @@ const createEvent = async (req, res) => {
       longitude,
     } = req.body;
 
+    const parsedDate = new Date(eventDate);
+    if (isNaN(parsedDate)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid event date',
+      });
+    }
+
     const event = await Event.create({
       eventName,
-      eventDate: new Date(eventDate),
+      eventDate: parsedDate,
       vendorId: req.user._id,
-      customerId,
+      customerId: customerId || null,
       customerEmail,
       customerPhone,
       location: {
         address,
-        coordinates: { latitude, longitude },
+        coordinates: {
+          latitude,
+          longitude,
+        },
       },
       timeline: {
-        scheduledTime: new Date(eventDate),
+        scheduledTime: parsedDate,
       },
     });
 
@@ -51,14 +64,15 @@ const createEvent = async (req, res) => {
   }
 };
 
-// @desc    Check in to event
+/* ======================================================
+   CHECK-IN
+====================================================== */
 // @route   POST /api/events/check-in
 // @access  Private (Vendor only)
 const checkIn = async (req, res) => {
   try {
     const { eventId, latitude, longitude, photoUrl } = req.body;
 
-    // Find event
     const event = await Event.findById(eventId);
     if (!event) {
       return res.status(404).json({
@@ -67,7 +81,6 @@ const checkIn = async (req, res) => {
       });
     }
 
-    // Verify vendor owns event
     if (event.vendorId.toString() !== req.user._id.toString()) {
       return res.status(403).json({
         success: false,
@@ -75,7 +88,6 @@ const checkIn = async (req, res) => {
       });
     }
 
-    // Check if already checked in
     const existingCheckIn = await CheckIn.findOne({ eventId });
     if (existingCheckIn) {
       return res.status(400).json({
@@ -84,7 +96,6 @@ const checkIn = async (req, res) => {
       });
     }
 
-    // Create check-in
     const checkIn = await CheckIn.create({
       eventId,
       vendorId: req.user._id,
@@ -96,7 +107,6 @@ const checkIn = async (req, res) => {
       },
     });
 
-    // Update event
     event.status = 'checked_in';
     event.timeline.checkInTime = new Date();
     await event.save();
@@ -116,14 +126,15 @@ const checkIn = async (req, res) => {
   }
 };
 
-// @desc    Upload progress
+/* ======================================================
+   UPLOAD PROGRESS
+====================================================== */
 // @route   POST /api/events/progress
 // @access  Private (Vendor only)
 const uploadProgress = async (req, res) => {
   try {
     const { eventId, progressType, photoUrls, notes } = req.body;
 
-    // Find event
     const event = await Event.findById(eventId);
     if (!event) {
       return res.status(404).json({
@@ -132,7 +143,6 @@ const uploadProgress = async (req, res) => {
       });
     }
 
-    // Verify vendor owns event
     if (event.vendorId.toString() !== req.user._id.toString()) {
       return res.status(403).json({
         success: false,
@@ -140,14 +150,23 @@ const uploadProgress = async (req, res) => {
       });
     }
 
-    // Create progress record
     const progress = await EventProgress.create({
       eventId,
       vendorId: req.user._id,
       progressType,
-      photos: photoUrls.map((url) => ({ url, uploadedAt: new Date() })),
+      photos: photoUrls.map((url) => ({
+        url,
+        uploadedAt: new Date(),
+      })),
       notes,
     });
+
+    // 🔥 IMPORTANT: advance event state
+    if (event.status === 'checked_in') {
+      event.status = 'in_progress';
+      event.timeline.startTime = new Date();
+      await event.save();
+    }
 
     res.json({
       success: true,
@@ -164,17 +183,17 @@ const uploadProgress = async (req, res) => {
   }
 };
 
-// @desc    Get vendor events
+/* ======================================================
+   GET VENDOR EVENTS
+====================================================== */
 // @route   GET /api/events/vendor
 // @access  Private (Vendor only)
 const getVendorEvents = async (req, res) => {
   try {
     const { status } = req.query;
-    
+
     const query = { vendorId: req.user._id };
-    if (status) {
-      query.status = status;
-    }
+    if (status) query.status = status;
 
     const events = await Event.find(query)
       .sort({ eventDate: -1 })
@@ -194,7 +213,9 @@ const getVendorEvents = async (req, res) => {
   }
 };
 
-// @desc    Get event details
+/* ======================================================
+   GET EVENT DETAILS
+====================================================== */
 // @route   GET /api/events/:id
 // @access  Private
 const getEventDetails = async (req, res) => {
@@ -210,10 +231,10 @@ const getEventDetails = async (req, res) => {
       });
     }
 
-    // Check access
     const hasAccess =
       event.vendorId._id.toString() === req.user._id.toString() ||
-      event.customerId._id.toString() === req.user._id.toString();
+      (event.customerId &&
+        event.customerId._id.toString() === req.user._id.toString());
 
     if (!hasAccess) {
       return res.status(403).json({
@@ -222,7 +243,6 @@ const getEventDetails = async (req, res) => {
       });
     }
 
-    // Get check-in and progress
     const checkIn = await CheckIn.findOne({ eventId: req.params.id });
     const progress = await EventProgress.find({ eventId: req.params.id });
 

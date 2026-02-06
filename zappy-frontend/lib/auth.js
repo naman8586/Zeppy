@@ -1,63 +1,91 @@
 // ============================================
 // FILE: src/lib/auth.js
-// Authentication Utilities with Enhanced Security
+// Stable Authentication Utilities (Next.js Safe)
 // ============================================
 import Cookies from 'js-cookie';
 
 const USER_KEY = 'zappy_user';
 const TOKEN_KEY = 'zappy_token';
 
+// 🧠 In-memory cache (prevents race conditions)
+let cachedUser = null;
+let cachedToken = null;
+let hydrated = false;
+
+function hydrate() {
+  if (hydrated || typeof window === 'undefined') return;
+
+  try {
+    cachedToken = Cookies.get(TOKEN_KEY) || null;
+    const userStr = Cookies.get(USER_KEY);
+    cachedUser = userStr ? JSON.parse(userStr) : null;
+  } catch {
+    cachedToken = null;
+    cachedUser = null;
+  }
+
+  hydrated = true;
+}
+
 export const auth = {
-  // Store user session
+  // ✅ Login and hydrate cache
   login: (user, token) => {
-    const options = { 
-      expires: 7, 
+    const options = {
+      expires: 7,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict' 
+      sameSite: 'strict',
     };
+
     Cookies.set(TOKEN_KEY, token, options);
     Cookies.set(USER_KEY, JSON.stringify(user), options);
+
+    cachedToken = token;
+    cachedUser = user;
+    hydrated = true;
   },
 
-  // Clear session and redirect
+  // ✅ Logout cleanly
   logout: () => {
     Cookies.remove(TOKEN_KEY);
     Cookies.remove(USER_KEY);
+
+    cachedToken = null;
+    cachedUser = null;
+    hydrated = false;
+
     if (typeof window !== 'undefined') {
       window.location.href = '/login';
     }
   },
 
-  // Get current user
-  getUser: () => {
-    if (typeof window === 'undefined') return null;
-    const userStr = Cookies.get(USER_KEY);
-    try {
-      return userStr ? JSON.parse(userStr) : null;
-    } catch {
-      return null;
-    }
+  // ✅ Stable auth check
+  isAuthenticated: () => {
+    hydrate();
+    return Boolean(cachedToken);
   },
 
-  // Get auth token
-  getToken: () => Cookies.get(TOKEN_KEY),
+  // ✅ Stable user getter
+  getUser: () => {
+    hydrate();
+    return cachedUser;
+  },
 
-  // Check authentication status
-  isAuthenticated: () => !!Cookies.get(TOKEN_KEY),
+  // ✅ Token getter (used by axios interceptor)
+  getToken: () => {
+    hydrate();
+    return cachedToken;
+  },
 
-  // Role checking with safety fallbacks
+  // Role helpers
   hasRole: (role) => {
     const user = auth.getUser();
     return user?.role === role;
   },
-  
-  isVendor: () => auth.hasRole('vendor'),
-  
-  isCustomer: () => auth.hasRole('customer'),
 
+  isVendor: () => auth.hasRole('vendor'),
+  isCustomer: () => auth.hasRole('customer'),
   isAdmin: () => auth.hasRole('admin'),
 
-  // Get user name for display
   getUserName: () => {
     const user = auth.getUser();
     return user?.profile?.name || user?.email || 'Operator';
